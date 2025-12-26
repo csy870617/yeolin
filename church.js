@@ -32,24 +32,31 @@ export async function ensureFirebase() {
   return { db: _firebaseDb, fs: _firebaseFsModule };
 }
 
-// 고유 그룹 ID 생성기 (이름+비밀번호 조합)
+/**
+ * 고유 그룹 ID 생성 (그룹명과 비밀번호를 조합)
+ * 띄어쓰기 하나라도 다르면 다른 ID가 생성됩니다.
+ */
 const getChurchId = (cName, pw) => `${cName}_${pw}`;
 
-// 결과 저장
+// 결과 저장 (중복 이름 체크 로직 포함)
 export async function saveMyResultToChurch(name, churchName, password, targetType) {
-  const n = name.trim(), c = churchName, p = password; // 띄어쓰기를 허용하기 위해 그룹명/비번 trim 제거 가능하나, 여기선 값 존재여부만 체크
+  const n = name.trim();
+  // 그룹명과 비밀번호는 공백을 포함한 원본 값을 사용합니다.
+  const c = churchName; 
+  const p = password;
+
   if (!n || !c || !p) throw new Error("모든 항목을 입력해 주세요.");
   if (!targetType) throw new Error("먼저 검사를 완료하거나, '다른 유형 보기'에서 내 유형을 선택해 주세요.");
   if (typeof window.typeResults === 'undefined') throw new Error("데이터를 로드할 수 없습니다.");
 
   const { db, fs } = await ensureFirebase();
   
-  // 이름과 비밀번호를 조합한 고유 ID 사용
+  // 고유 ID 적용
   const churchId = getChurchId(c, p);
   const churchRef = fs.doc(db, CHURCH_COLLECTION, churchId);
   const snap = await fs.getDoc(churchRef);
 
-  // 그룹이 없으면 새로 생성 (이름+비번 조합이므로 snap.exists()가 false면 완전히 새로운 그룹임)
+  // 그룹이 없으면 새로 생성 (조합 ID이므로 snap이 없으면 완전히 새로운 그룹임)
   if (!snap.exists()) {
     await fs.setDoc(churchRef, { 
       churchName: c, 
@@ -67,6 +74,7 @@ export async function saveMyResultToChurch(name, churchName, password, targetTyp
     throw new Error("이미 입력된 이름입니다.\n나를 표현하는 다른 이름을 입력해주세요.");
   }
 
+  // 중복이 없다면 저장 진행
   const data = window.typeResults[targetType];
   await fs.addDoc(membersRef, {
     name: n, type: targetType, shortText: data.summary || data.nameKo || "",
@@ -134,10 +142,7 @@ export function renderChurchList(dom, churchName, members, onDeleteClick) {
     </div>`;
 
   dom.churchList.querySelectorAll(".member-delete-btn").forEach(btn => {
-    btn.addEventListener("click", () => {
-      // 삭제 시 현재 그룹의 비밀번호 정보를 함께 전달하기 위해 부모 요소 등에서 관리하는 비번 사용 권장
-      onDeleteClick(btn);
-    });
+    btn.addEventListener("click", () => onDeleteClick(btn));
   });
 }
 
