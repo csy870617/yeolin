@@ -1,4 +1,4 @@
-// app.js - 인앱브라우저 호환성 및 알림 메시지 수정 적용
+// app.js - 인앱브라우저 호환성 및 그룹 고유 ID 로직 적용
 
 import * as Utils from './utils.js';
 import * as Core from './core.js';
@@ -232,21 +232,34 @@ document.addEventListener('DOMContentLoaded', () => {
 
   if (dom.btns.groupCreate) {
     dom.btns.groupCreate.addEventListener("click", async () => {
-      const cName = dom.inputs.setupChurch.value.trim();
-      const cPw = dom.inputs.setupPw.value.trim();
-      if (!cName || !cPw) return alert("그룹명과 비밀번호를 모두 입력해 주세요.");
+      // 띄어쓰기를 구분하기 위해 원본 값을 가져오고 trim은 검증용으로만 씁니다.
+      const cName = dom.inputs.setupChurch.value; 
+      const cPw = dom.inputs.setupPw.value;
+      
+      if (!cName.trim() || !cPw.trim()) return alert("그룹명과 비밀번호를 모두 입력해 주세요.");
       if (cName === cPw) return alert("비밀번호를 다르게 입력해주세요.");
 
       try {
         const { db, fs } = await Church.ensureFirebase();
-        const docRef = fs.doc(db, "faith_churches", cName);
+        
+        // 이름과 비밀번호를 조합한 고유 ID 생성 (띄어쓰기가 다르면 ID가 달라짐)
+        const churchUniqueId = `${cName}_${cPw}`;
+        const docRef = fs.doc(db, "faith_churches", churchUniqueId);
         const snap = await fs.getDoc(docRef);
-        // [수정] 이미 존재할 때 안내 문구 변경
+        
+        // 동일한 이름+비번 조합이 이미 있을 때만 오류 발생
         if (snap.exists()) { 
-          alert("이미 존재하는 그룹입니다.\n그룹명이나 비밀번호를 바꿔주세요."); 
+          alert("이미 동일한 설정으로 생성된 그룹이 있습니다.\n입장하기를 이용하거나 설정을 바꿔주세요."); 
           return; 
         }
-        await fs.setDoc(docRef, { churchName: cName, password: cPw, createdAt: Date.now() });
+        
+        // 새 그룹 생성
+        await fs.setDoc(docRef, { 
+          churchName: cName, 
+          password: cPw, 
+          createdAt: Date.now() 
+        });
+        
         alert(`'${cName}' 그룹이 생성되었습니다!`);
         proceedToGroup(cName, cPw);
       } catch (e) { console.error(e); alert("오류: " + e.message); }
@@ -255,15 +268,19 @@ document.addEventListener('DOMContentLoaded', () => {
 
   if (dom.btns.groupLogin) {
     dom.btns.groupLogin.addEventListener("click", async () => {
-      const cName = dom.inputs.setupChurch.value.trim();
-      const cPw = dom.inputs.setupPw.value.trim();
-      if (!cName || !cPw) return alert("그룹명과 비밀번호를 입력해 주세요.");
+      const cName = dom.inputs.setupChurch.value;
+      const cPw = dom.inputs.setupPw.value;
+      if (!cName.trim() || !cPw.trim()) return alert("그룹명과 비밀번호를 입력해 주세요.");
+      
       try {
         const { db, fs } = await Church.ensureFirebase();
-        const docRef = fs.doc(db, "faith_churches", cName);
+        // 로그인 시에도 고유 ID로 조회
+        const churchUniqueId = `${cName}_${cPw}`;
+        const docRef = fs.doc(db, "faith_churches", churchUniqueId);
         const snap = await fs.getDoc(docRef);
-        if (!snap.exists()) { alert("존재하지 않는 그룹입니다."); return; }
-        if (snap.data().password !== cPw) { alert("비밀번호가 틀렸습니다."); return; }
+        
+        if (!snap.exists()) { alert("존재하지 않는 그룹이거나 비밀번호가 틀렸습니다."); return; }
+        
         proceedToGroup(cName, cPw);
       } catch (e) { console.error(e); alert("오류 발생"); }
     });
@@ -423,7 +440,7 @@ document.addEventListener('DOMContentLoaded', () => {
   if (dom.btns.inviteBottom) {
     dom.btns.inviteBottom.addEventListener("click", async () => {
       const baseUrl = "https://faiths.life";
-      const gName = dom.inputs.viewChurch.value.trim() || "우리교회";
+      const gName = dom.inputs.viewChurch.value || "우리교회";
       if (typeof Kakao !== "undefined" && Kakao.isInitialized && Kakao.isInitialized()) {
         try {
           Kakao.Share.sendDefault({
